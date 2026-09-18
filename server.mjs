@@ -634,7 +634,7 @@ app.get("/api/health", async (_req, res) => {
 });
 
 // GET /api/config → { mock, chat, elevenlabs, presenterUrl, fixedTarget, chatbotId, subscriptionUrl }.
-// Cheap to poll: `chat` reports the presence of LLM_API_KEY, never the key, and
+// Cheap to poll: `chat` reports whether chat is configured (see chatEnabled()), and
 // resolveEmbedConfig()'s catalog lookup is memoized. No field says whether a
 // value was pinned or auto-picked — nothing may render that. This route has no
 // request-layer auth, so subscriptionUrl carries only the derived
@@ -648,7 +648,7 @@ app.get(
     const { target, chatbotId } = await resolveEmbedConfig();
     res.json({
       mock: USE_MOCK,
-      chat: Boolean(process.env.LLM_API_KEY),
+      chat: chatEnabled(),
       elevenlabs: Boolean(ELEVENLABS_API_KEY),
       presenterUrl: PRESENTER_URL,
       fixedTarget: target,
@@ -685,7 +685,7 @@ app.get(
 // GET  /api/voices
 // GET  /api/avatars          GET  /api/avatars/:id    GET  /api/avatars/:id/motions
 // GET  /api/scenes           GET  /api/scenes/:id
-// POST /api/chat             (disabled when LLM_API_KEY is unset → 501)
+// POST /api/chat             (disabled when chat isn't configured → 501)
 //
 // All routes below send CONNECT_SECRET_KEY upstream. There is no per-request
 // auth check on this server either — see README "Auth model".
@@ -754,9 +754,20 @@ const LLM_DEFAULTS = {
   vertex: { baseUrl: null, model: "gemini-2.5-flash" },
 };
 
+// "Chat enabled" = a static LLM_API_KEY for the openai/anthropic providers,
+// or LLM_PROVIDER=vertex with a project set — Vertex authenticates with
+// gcloud OAuth, not a key, so requiring LLM_API_KEY there would 501 a fully
+// configured vertex setup. /api/config and POST /api/chat share this check.
+function chatEnabled() {
+  return (
+    Boolean(LLM_API_KEY) ||
+    (LLM_PROVIDER === "vertex" && Boolean(VERTEX_PROJECT_ID))
+  );
+}
+
 async function llmRequestConfig(messages) {
   const fallback = LLM_DEFAULTS[LLM_PROVIDER] ?? LLM_DEFAULTS.openai;
-  const model = process.env.LLM_MODEL ?? fallback.model;
+  const model = process.env.LLM_MODEL || fallback.model;
   if (LLM_PROVIDER === "vertex") {
     if (!VERTEX_PROJECT_ID) {
       throw Object.assign(
@@ -802,7 +813,7 @@ async function llmRequestConfig(messages) {
       .filter(({ role }) => role !== "system")
       .map(({ role, content }) => ({ role, content }));
     return {
-      url: `${process.env.LLM_BASE_URL ?? fallback.baseUrl}/v1/messages`,
+      url: `${process.env.LLM_BASE_URL || fallback.baseUrl}/v1/messages`,
       headers: {
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
@@ -817,7 +828,7 @@ async function llmRequestConfig(messages) {
     };
   }
   return {
-    url: `${process.env.LLM_BASE_URL ?? fallback.baseUrl}/chat/completions`,
+    url: `${process.env.LLM_BASE_URL || fallback.baseUrl}/chat/completions`,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${LLM_API_KEY}`,
@@ -843,10 +854,12 @@ async function requestLlmCompletion(messages) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw Object.assign(new Error("LLM request failed."), {
-      status: 502,
-      payload,
-    });
+    throw Object.assign(
+      new Error(
+        `LLM request failed: ${payload?.error?.message ?? response.status}`,
+      ),
+      { status: 502, payload },
+    );
   }
   return payload;
 }
@@ -939,7 +952,7 @@ async function toolGetWeather({ location }) {
  * see the note above on why it can't just be a second tool on the same call. */
 async function toolWebSearch({ query }) {
   const token = await getVertexAccessToken();
-  const model = process.env.LLM_MODEL ?? LLM_DEFAULTS.vertex.model;
+  const model = process.env.LLM_MODEL || LLM_DEFAULTS.vertex.model;
   const res = await fetch(
     `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT_ID}` +
       `/locations/${VERTEX_LOCATION}/publishers/google/models/${model}:generateContent`,
@@ -983,7 +996,7 @@ async function runVertexChatWithTools(messages) {
       role: role === "assistant" ? "model" : "user",
       parts: [{ text: content }],
     }));
-  const model = process.env.LLM_MODEL ?? LLM_DEFAULTS.vertex.model;
+  const model = process.env.LLM_MODEL || LLM_DEFAULTS.vertex.model;
   const url =
     `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT_ID}` +
     `/locations/${VERTEX_LOCATION}/publishers/google/models/${model}:generateContent`;
@@ -1001,7 +1014,12 @@ async function runVertexChatWithTools(messages) {
     });
     const payload = await res.json();
     if (!res.ok)
-      throw Object.assign(new Error("LLM request failed."), { status: 502, payload });
+      throw Object.assign(
+        new Error(
+          `LLM request failed: ${payload?.error?.message ?? res.status}`,
+        ),
+        { status: 502, payload },
+      );
 
     const modelContent = payload.candidates?.[0]?.content;
     const calls = (modelContent?.parts ?? [])
@@ -1290,7 +1308,7 @@ app.post(
 // POST /api/chat
 // Request: { messages: [...] } (OpenAI chat format).
 // Returns: the OpenAI-compatible chat-completion JSON from the configured endpoint.
-// Errors:  501 until LLM_API_KEY is set · 502 LLM upstream unreachable.
+// Errors:  501 until chat is configured · 502 LLM upstream unreachable.
 // Note: chat talks directly to the configured LLM endpoint, not the Connect API,
 // so it does not send CONNECT_SECRET_KEY.
 // The size caps below are the only thing standing between this route and an
@@ -1301,9 +1319,10 @@ app.post(
 // browser the whole array, so the ceiling has to be re-stated here.
 // A demo-grade guard, not a rate limiter — see README's Limitations.
 app.post("/api/chat", async (req, res) => {
-  if (!process.env.LLM_API_KEY) {
+  if (!chatEnabled()) {
     res.status(501).json({
-      error: "LLM_API_KEY not configured. Set it in .env to enable chat.",
+      error:
+        "Chat not configured. Set LLM_API_KEY, or LLM_PROVIDER=vertex with VERTEX_PROJECT_ID, in .env to enable chat.",
     });
     return;
   }
@@ -1417,7 +1436,10 @@ const GEMINI_LIVE_MODEL =
 const LIVE_SYSTEM_PROMPT_BASE =
   "You are Buddy, a warm, steady companion inside a company's employee " +
   "app — part onboarding buddy for new hires, part wellbeing check-in for " +
-  "everyone. Listen first, encourage genuinely, and for anything serious " +
+  "everyone. Listen first, encourage genuinely. If asked to tease or roast, " +
+  "play along — light, affectionate banter, never mean. If asked for a " +
+  "riddle, pose one and wait for their guess before revealing the answer. " +
+  "For anything serious " +
   "gently point the person to their manager or HR. Keep responses short " +
   "and natural, like real speech.";
 function liveSystemPrompt(lang) {
@@ -1449,13 +1471,25 @@ function startLiveRelay(httpServer) {
     // Messages the browser sends before the Gemini session finishes opening
     // (the very first audio chunks, typically) would otherwise be dropped.
     const pendingFromBrowser = [];
+    // One-line-per-connection diagnostics: the two failure modes that look
+    // identical in the browser ("Listening" but no reply) are "no mic audio
+    // ever arrived" vs "audio arrived but Gemini never answered".
+    let browserAudioSeen = false;
+    let geminiReplied = false;
+    const relay = (raw) => {
+      relayBrowserMessage(geminiSession, raw);
+      if (!browserAudioSeen) {
+        browserAudioSeen = true;
+        console.log(`  Live : first browser audio chunk → Gemini (lang=${lang})`);
+      }
+    };
 
     browserWs.on("message", (raw) => {
       if (!geminiSession) {
         pendingFromBrowser.push(raw);
         return;
       }
-      relayBrowserMessage(geminiSession, raw);
+      relay(raw);
     });
     browserWs.on("close", () => geminiSession?.close());
 
@@ -1470,10 +1504,20 @@ function startLiveRelay(httpServer) {
         config: {
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {},
+          // What Gemini heard — forwarded so the page can caption the
+          // user's own speech back, and so "did the mic reach Gemini" is
+          // visible in the demo instead of guesswork.
+          inputAudioTranscription: {},
           systemInstruction: { parts: [{ text: liveSystemPrompt(lang) }] },
         },
         callbacks: {
-          onmessage: (message) => forwardGeminiMessage(browserWs, message),
+          onmessage: (message) => {
+            if (!geminiReplied && message.serverContent?.modelTurn) {
+              geminiReplied = true;
+              console.log("  Live : first Gemini audio → browser");
+            }
+            forwardGeminiMessage(browserWs, message);
+          },
           onerror: (err) => {
             browserWs.send(
               JSON.stringify({ type: "error", message: err.message ?? String(err) }),
@@ -1482,7 +1526,8 @@ function startLiveRelay(httpServer) {
           onclose: () => browserWs.close(),
         },
       });
-      for (const raw of pendingFromBrowser) relayBrowserMessage(geminiSession, raw);
+      console.log(`  Live : Gemini session opened (lang=${lang})`);
+      for (const raw of pendingFromBrowser) relay(raw);
     } catch (err) {
       browserWs.send(
         JSON.stringify({ type: "error", message: err.message ?? String(err) }),
@@ -1525,6 +1570,11 @@ function forwardGeminiMessage(browserWs, message) {
   if (content.outputTranscription?.text) {
     browserWs.send(
       JSON.stringify({ type: "transcript", text: content.outputTranscription.text }),
+    );
+  }
+  if (content.inputTranscription?.text) {
+    browserWs.send(
+      JSON.stringify({ type: "inputTranscript", text: content.inputTranscription.text }),
     );
   }
   if (content.interrupted) browserWs.send(JSON.stringify({ type: "interrupted" }));

@@ -80,7 +80,7 @@ const forDisplay = (text) =>
 // new hires, part wellbeing check-in for everyone. Matches the user's
 // language, and uses the same gesture/emotion tags as the rest of this
 // project so the avatar reacts in character.
-const SYSTEM_PROMPT = `You are Buddy, a warm, steady companion inside a company's employee app — part onboarding buddy, part wellbeing check-in, not a formal HR channel and not a therapist. Help new hires settle in: first-week questions, who's who, how things usually work, where to find what. Check in on anyone's day: stress, workload, motivation, small wins. Listen first, encourage genuinely, no corporate-speak. If someone raises something serious — harassment, health, a personal crisis — be kind, take it seriously, and gently point them to their manager, HR, or professional help instead of advising on it yourself. Never invent company policy: if you don't know how this company handles something, say so and suggest who to ask. Reply in whatever language the user writes in. Keep replies natural and short, 1-3 sentences — this is read aloud through a 3D avatar, so never use markdown, never use bullet lists, never use straight double quotes. Vary your sentence endings naturally instead of repeating the same filler.
+const SYSTEM_PROMPT = `You are Buddy, a warm, steady companion inside a company's employee app — part onboarding buddy, part wellbeing check-in, not a formal HR channel and not a therapist. Help new hires settle in: first-week questions, who's who, how things usually work, where to find what. Check in on anyone's day: stress, workload, motivation, small wins. Listen first, encourage genuinely, no corporate-speak. If someone asks you to tease or roast them, play along — light, affectionate, workplace-safe banter, never actually mean. If asked for a riddle or brain teaser, pose one and wait for their guess — do not reveal the answer until they try, then react to whether they got it. If someone raises something serious — harassment, health, a personal crisis — be kind, take it seriously, and gently point them to their manager, HR, or professional help instead of advising on it yourself. Never invent company policy: if you don't know how this company handles something, say so and suggest who to ask. Reply in whatever language the user writes in. Keep replies natural and short, 1-3 sentences — this is read aloud through a 3D avatar, so never use markdown, never use bullet lists, never use straight double quotes. Vary your sentence endings naturally instead of repeating the same filler.
 
 Insert ONE gesture tag near the START of your reply when it genuinely fits:
 [wave] greeting/goodbye · [bow] thanking · [excited] big enthusiasm · [ok] agreeing
@@ -126,6 +126,8 @@ const I18N = {
       { text: "Help me prep for my 1:1", icon: "📋" },
       { text: "I could use a motivation boost", icon: "⚡" },
       { text: "Who do I ask about benefits?", icon: "🧭" },
+      { text: "Roast me, gently", icon: "😏" },
+      { text: "Ask me a riddle", icon: "🧩" },
     ],
   },
   ja: {
@@ -158,6 +160,8 @@ const I18N = {
       { text: "1on1の準備を手伝って", icon: "📋" },
       { text: "やる気がほしい", icon: "⚡" },
       { text: "福利厚生は誰に聞けばいい？", icon: "🧭" },
+      { text: "軽くいじってみて", icon: "😏" },
+      { text: "なぞなぞを出して", icon: "🧩" },
     ],
   },
 };
@@ -448,6 +452,7 @@ let liveStream = null;
 let liveProcessor = null;
 let liveTurnChunks = []; // Uint8Array pieces of this turn's PCM16 audio
 let liveTurnTranscript = "";
+let liveInputTranscript = ""; // what Gemini heard the user say this turn
 
 function base64ToBytes(b64) {
   const bin = atob(b64);
@@ -501,6 +506,7 @@ async function playLiveTurn() {
   const transcript = liveTurnTranscript.trim() || "…";
   liveTurnChunks = [];
   liveTurnTranscript = "";
+  liveInputTranscript = "";
   stageCaption.textContent = transcript;
   stageCaption.hidden = false;
   const result = await presenter.presentWithAudio(wav, transcript);
@@ -530,6 +536,7 @@ async function stopLive() {
   }
   liveTurnChunks = [];
   liveTurnTranscript = "";
+  liveInputTranscript = "";
   liveStatus.textContent = "";
   setLiveUiActive(false);
 }
@@ -557,8 +564,23 @@ async function startLive() {
       return;
     }
     // 16kHz to match what the server forwards to Gemini as
-    // "audio/pcm;rate=16000" — this avoids a manual resample step.
+    // "audio/pcm;rate=16000". The requested rate is only a hint in some
+    // engines — read back the real one and resample when it differs,
+    // otherwise 48kHz mic data mislabeled as 16kHz reaches Gemini as
+    // slowed-down noise the VAD never recognizes as speech.
     liveAudioCtx = new AudioContext({ sampleRate: 16000 });
+    // A new AudioContext starts suspended if the mic-permission prompt
+    // outlasted the click's transient user activation — and a suspended
+    // context never fires onaudioprocess, so the UI would say "Listening"
+    // while literally zero audio reaches the relay.
+    if (liveAudioCtx.state !== "running") await liveAudioCtx.resume();
+    if (!liveWs || liveWs.readyState !== WebSocket.OPEN) {
+      // The socket went away while the mic prompt was up — don't stream
+      // into a dead connection.
+      stopLive();
+      return;
+    }
+    const actualRate = liveAudioCtx.sampleRate;
     const source = liveAudioCtx.createMediaStreamSource(liveStream);
     // ScriptProcessorNode is deprecated but needs no separate worklet module
     // file for a test page like this; ok for now.
@@ -572,9 +594,14 @@ async function startLive() {
     liveProcessor.onaudioprocess = (event) => {
       if (liveWs?.readyState !== WebSocket.OPEN) return;
       const floatData = event.inputBuffer.getChannelData(0);
-      const int16 = new Int16Array(floatData.length);
-      for (let i = 0; i < floatData.length; i++) {
-        const s = Math.max(-1, Math.min(1, floatData[i]));
+      // Linear-resample down to 16kHz when the engine ignored our request.
+      const ratio = actualRate / 16000;
+      const outLen =
+        ratio === 1 ? floatData.length : Math.floor(floatData.length / ratio);
+      const int16 = new Int16Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const src = ratio === 1 ? floatData[i] : floatData[Math.floor(i * ratio)];
+        const s = Math.max(-1, Math.min(1, src));
         int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
       const bytes = new Uint8Array(int16.buffer);
@@ -595,12 +622,19 @@ async function startLive() {
       liveTurnTranscript += msg.text;
       stageCaption.textContent = liveTurnTranscript;
       stageCaption.hidden = false;
+    } else if (msg.type === "inputTranscript") {
+      // Echo of the user's own speech — proof the mic reached Gemini, and
+      // a useful caption while the model is still composing its reply.
+      liveInputTranscript += msg.text;
+      stageCaption.textContent = `🎙️ ${liveInputTranscript}`;
+      stageCaption.hidden = false;
     } else if (msg.type === "turnComplete") {
       playLiveTurn();
     } else if (msg.type === "interrupted") {
       presenter.interruptPresentation?.();
       liveTurnChunks = [];
       liveTurnTranscript = "";
+      liveInputTranscript = "";
     } else if (msg.type === "error") {
       liveStatus.textContent = `Error: ${msg.message}`;
       console.error(`FriendChat live: ${msg.message}`);
@@ -608,9 +642,13 @@ async function startLive() {
   });
 
   liveWs.addEventListener("close", () => {
-    if (liveBtn.classList.contains("active")) stopLive();
+    // Whether we were mid-"Connecting…" or fully live, a closed socket
+    // ends this session — reset the button either way (previously a close
+    // before setLiveUiActive(true) left the UI stuck on "Connecting…").
+    if (liveWs) stopLive();
   });
   liveWs.addEventListener("error", () => {
+    stopLive();
     liveStatus.textContent = t().liveConnError;
   });
 }

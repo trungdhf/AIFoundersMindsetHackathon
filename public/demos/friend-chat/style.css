@@ -143,6 +143,8 @@ sv-presenter { display: block; width: 100%; height: 100%; }
 .tiles--topics button:nth-child(4) { --tile: #f57cd0; }
 .tiles--topics button:nth-child(5) { --tile: #c9e05c; }
 .tiles--topics button:nth-child(6) { --tile: #7cd9f5; }
+.tiles--topics button:nth-child(7) { --tile: #b07cf5; }
+.tiles--topics button:nth-child(8) { --tile: #f5e05c; }
 .tiles--topics button {
   border-color: var(--tile, var(--border));
   background: color-mix(in srgb, var(--tile, var(--surface)) 16%, var(--surface));
