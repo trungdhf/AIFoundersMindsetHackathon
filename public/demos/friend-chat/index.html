@@ -3,12 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>友達 | AI Friend</title>
+    <title>Buddy | AI work companion</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header class="site-header">
-      <span class="logo">友達 <small>AI Friend — chat about anything</small></span>
+      <span class="logo">Buddy <small>onboarding &amp; wellbeing companion</small></span>
+      <div class="lang-switch" role="group" aria-label="Language">
+        <button type="button" data-lang="en" class="active">EN</button>
+        <button type="button" data-lang="ja">日本語</button>
+      </div>
     </header>
 
     <main class="page">
@@ -24,11 +28,11 @@
       </aside>
 
       <section class="lesson">
-        <h1>Just here to chat</h1>
+        <h1>New here? Or just a long day?</h1>
         <p class="lede">
-          No script, no quiz — say whatever's on your mind. Powered by Gemini
-          on Vertex AI, not the Perxona chatbot, so it can talk about
-          literally anything.
+          Ask how things work, vent about a rough afternoon, or just check in.
+          Powered by Gemini on Vertex AI with an ElevenLabs voice — a
+          companion for employees, not a scripted HR bot.
         </p>
         <div id="starter-tiles" class="tiles tiles--topics"></div>
 
@@ -58,7 +62,7 @@
               class="chat-input"
               type="text"
               autocomplete="off"
-              placeholder="Say anything…"
+              placeholder="What's on your mind…"
               aria-label="Message"
             />
             <button id="send-btn" class="send-btn" type="submit">Send</button>

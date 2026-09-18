@@ -212,6 +212,9 @@ Then open `.env` and fill in the values:
 | `LLM_PROVIDER`                    | —        | `openai` (default) for Chat Completions, or `anthropic` for Claude Messages API.                                                                                                      |
 | `LLM_BASE_URL`                    | —        | Provider base URL. OpenAI default: `https://api.openai.com/v1`; Anthropic default: `https://api.anthropic.com`.                                                                       |
 | `LLM_MODEL`                       | —        | Provider model. Defaults follow `LLM_PROVIDER`: `gpt-4o-mini` for openai, `claude-sonnet-4-20250514` for anthropic.                                                                   |
+| `ELEVENLABS_API_KEY`              | —        | Enables `POST /api/tts`: the friend-chat demo speaks replies with an ElevenLabs voice via `presentWithAudio()`. Blank keeps the Connect voice.                                        |
+| `ELEVENLABS_VOICE_ID`             | —        | ElevenLabs voice id (default `21m00Tcm4TlvDq8ikWAM` — Rachel, a premade voice).                                                                                                       |
+| `ELEVENLABS_MODEL_ID`             | —        | ElevenLabs model (default `eleven_multilingual_v2`).                                                                                                                                |
 
 The server **exits at startup** if `PERXONA_API_BASE_URL` or either key is missing — one key is not enough, and the message
 names the one you left blank. If
@@ -275,6 +278,7 @@ the Connect API.
 | `GET /api/avatars` · `/api/avatars/:id` · `/api/avatars/:id/motions` | List / detail / motions.                                                                                      |
 | `GET /api/scenes` · `/api/scenes/:id`                                | List / detail.                                                                                                |
 | `POST /api/chat`                                                     | Opt-in LLM chat. Used by Studio's own-LLM source. Returns `501` until `LLM_API_KEY` is set.                   |
+| `POST /api/tts`                                                      | Opt-in ElevenLabs TTS — `{ text }` in, raw PCM out; play it via `presentWithAudio()`. `501` until `ELEVENLABS_API_KEY` is set. |
 | `/api/chatbots*`                                                     | Chatbot CRUD, knowledge upload, and multi-turn chat.                                                          |
 
 ### Direct Connect presentation API

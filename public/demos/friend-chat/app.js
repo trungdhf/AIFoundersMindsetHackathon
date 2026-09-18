@@ -1,5 +1,5 @@
 /**
- * Perxona Connect Kit — Friend Chat demo
+ * Perxona Connect Kit — Buddy demo (employee companion)
  *
  * Same avatar/motion/emotion pattern as the myapp/ lesson app, but the
  * conversation goes through POST /api/chat (Option C — "own LLM") instead of
@@ -7,6 +7,11 @@
  * server is configured with LLM_PROVIDER=vertex (Gemini on Vertex AI, auth
  * via gcloud — see server.mjs and .env), but the same code works unchanged
  * against LLM_PROVIDER=openai/anthropic too.
+ *
+ * Voice: when the server reports `elevenlabs: true` on GET /api/config,
+ * each reply is synthesized by POST /api/tts (ElevenLabs) and played through
+ * presenter.presentWithAudio() — BYO-TTS, same path the live mode uses for
+ * Gemini's audio — instead of present(). The Connect voice is the fallback.
  */
 
 const presenter = document.querySelector("sv-presenter");
@@ -71,10 +76,11 @@ function expandMotionTags(text) {
 const forDisplay = (text) =>
   text.replace(/\[[a-z]+\]/g, "").replace(/\(emo:[^)]*\)/gi, "").trim();
 
-// A friend, not an assistant or a teacher — talks about anything, matches
-// the user's language, and uses the same gesture/emotion tags as the rest
-// of this project so the avatar reacts in character.
-const SYSTEM_PROMPT = `You are a warm, easygoing, curious friend having a casual conversation — not an assistant, not a teacher, no disclaimers. Talk about anything: daily life, hobbies, opinions, random musings, jokes, advice. Reply in whatever language the user writes in. Keep replies natural and short, 1-3 sentences — this is read aloud through a 3D avatar, so never use markdown, never use bullet lists, never use straight double quotes. Vary your sentence endings naturally instead of repeating the same filler.
+// An employee companion, not a friend and not HR — part onboarding guide for
+// new hires, part wellbeing check-in for everyone. Matches the user's
+// language, and uses the same gesture/emotion tags as the rest of this
+// project so the avatar reacts in character.
+const SYSTEM_PROMPT = `You are Buddy, a warm, steady companion inside a company's employee app — part onboarding buddy, part wellbeing check-in, not a formal HR channel and not a therapist. Help new hires settle in: first-week questions, who's who, how things usually work, where to find what. Check in on anyone's day: stress, workload, motivation, small wins. Listen first, encourage genuinely, no corporate-speak. If someone raises something serious — harassment, health, a personal crisis — be kind, take it seriously, and gently point them to their manager, HR, or professional help instead of advising on it yourself. Never invent company policy: if you don't know how this company handles something, say so and suggest who to ask. Reply in whatever language the user writes in. Keep replies natural and short, 1-3 sentences — this is read aloud through a 3D avatar, so never use markdown, never use bullet lists, never use straight double quotes. Vary your sentence endings naturally instead of repeating the same filler.
 
 Insert ONE gesture tag near the START of your reply when it genuinely fits:
 [wave] greeting/goodbye · [bow] thanking · [excited] big enthusiasm · [ok] agreeing
@@ -85,20 +91,87 @@ End the reply with (emo:X) or (emo:X/level) when it fits:
 X = joy | excitement | admiration | caring | gratitude | sadness | disappointment | annoyance | embarrassment | curiosity | surprise | realization | confusion
 level = low | neutral | high`;
 
-const STARTERS = [
-  { en: "How's your day going?", icon: "☀️" },
-  { en: "Tell me something interesting", icon: "💡" },
-  { en: "Got a joke for me?", icon: "😄" },
-  { en: "What do you think about AI?", icon: "🤖" },
-  { en: "Give me some advice", icon: "🧭" },
-  { en: "What's your favorite thing?", icon: "❤️" },
-];
+// ── Language — the EN | 日本語 switch in the header. Everything the visitor
+// sees or hears flows through I18N[lang]: page copy, starters, greeting,
+// live-mode labels, the speech-recognition locale, and the language the LLM
+// is told to reply in. The voice stays the same — eleven_multilingual_v2
+// (and the Connect voices) speak both.
+const I18N = {
+  en: {
+    docTitle: "Buddy | AI work companion",
+    tagline: "onboarding & wellbeing companion",
+    h1: "New here? Or just a long day?",
+    lede:
+      "Ask how things work, vent about a rough afternoon, or just check in. " +
+      "Powered by Gemini on Vertex AI with an ElevenLabs voice — a " +
+      "companion for employees, not a scripted HR bot.",
+    placeholder: "What's on your mind…",
+    send: "Send",
+    greeting:
+      "Hey, I'm Buddy — here for your first weeks and the days after. How are you doing?",
+    failure: "Hmm, couldn't reach my brain just then — try again?",
+    stageError: "Couldn't start the avatar. Check the console.",
+    liveStart: "🔴 Go live (speech-to-speech)",
+    liveStop: "⏹ Stop live",
+    liveConnecting: "Connecting…",
+    liveListening: "🎙️ Listening — talk anytime",
+    micDenied: "Microphone permission denied.",
+    liveConnError: "Connection error.",
+    speechLang: "en-US",
+    llmLang: "English",
+    starters: [
+      { text: "It's my first week — any tips?", icon: "🌱" },
+      { text: "How do I meet people here?", icon: "🤝" },
+      { text: "I'm feeling a bit overwhelmed", icon: "🌤️" },
+      { text: "Help me prep for my 1:1", icon: "📋" },
+      { text: "I could use a motivation boost", icon: "⚡" },
+      { text: "Who do I ask about benefits?", icon: "🧭" },
+    ],
+  },
+  ja: {
+    docTitle: "Buddy | AIワークコンパニオン",
+    tagline: "オンボーディングと心のケアの相棒",
+    h1: "入社したて？それとも疲れた一日？",
+    lede:
+      "社内のことを聞いたり、嫌な一日の話をしたり、ただの雑談でも。" +
+      "Vertex AI 上の Gemini と ElevenLabs の音声で動く、" +
+      "社員のためのコンパニオンです。",
+    placeholder: "なんでも話してみて…",
+    send: "送信",
+    greeting:
+      "こんにちは、Buddyです。入社したての頃も、その先の毎日もそばにいます。今日はどんな一日ですか？",
+    failure: "うーん、うまく考えがまとまりませんでした。もう一度試してみます？",
+    stageError:
+      "アバターを起動できませんでした。コンソールを確認してください。",
+    liveStart: "🔴 ライブ会話をはじめる",
+    liveStop: "⏹ ライブを止める",
+    liveConnecting: "接続中…",
+    liveListening: "🎙️ 聞いています — いつでも話しかけて",
+    micDenied: "マイクの使用が許可されませんでした。",
+    liveConnError: "接続エラーが発生しました。",
+    speechLang: "ja-JP",
+    llmLang: "Japanese",
+    starters: [
+      { text: "入社1週目です。コツは？", icon: "🌱" },
+      { text: "どうやって人とつながればいい？", icon: "🤝" },
+      { text: "ちょっと疲れ気味です", icon: "🌤️" },
+      { text: "1on1の準備を手伝って", icon: "📋" },
+      { text: "やる気がほしい", icon: "⚡" },
+      { text: "福利厚生は誰に聞けばいい？", icon: "🧭" },
+    ],
+  },
+};
+
+// Remembered across reloads; a Japanese browser gets 日本語 first.
+let lang =
+  localStorage.getItem("buddy-lang") ??
+  (navigator.language?.startsWith("ja") ? "ja" : "en");
+const t = () => I18N[lang];
+let recognition = null; // Web Speech API instance, if the browser has one
 
 /** @type {{role: "user"|"assistant", text: string}[]} */
 const history = [];
 const MAX_HISTORY_TURNS = 20;
-const GREETING = "Hey! What's up? Ask me anything, or just say hi.";
-const FAILURE_REPLY = "Hmm, couldn't reach my brain just then — try again?";
 let audioUnlocked = false;
 let config = null;
 
@@ -117,6 +190,26 @@ async function request(path, body) {
     throw Object.assign(new Error(message), { status: res.status, data });
   }
   return data;
+}
+
+/**
+ * POST /api/tts — the one binary route: request() above only parses JSON,
+ * and this response IS the audio. The server returns raw PCM (s16le mono
+ * 24 kHz) from ElevenLabs; pcmToWav wraps it before presentWithAudio sees it.
+ */
+async function ttsRequest(text) {
+  const res = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(data.error || res.statusText), {
+      status: res.status,
+    });
+  }
+  return res.arrayBuffer();
 }
 
 function appendMessage(role, text) {
@@ -146,7 +239,7 @@ presenter.addEventListener("PRESENTER_STATUS", (event) => {
   for (const btn of starterTiles.querySelectorAll("button")) btn.disabled = false;
   if (!micBtn.hidden) micBtn.disabled = false;
   liveBtn.disabled = false;
-  appendMessage("assistant", GREETING);
+  appendMessage("assistant", t().greeting);
 });
 presenter.addEventListener("PLAYING_SPEECH_TEXT", (event) => {
   const text = event.detail?.text;
@@ -164,6 +257,35 @@ function setBusy(busy) {
   chatInput.disabled = busy;
   for (const btn of starterTiles.querySelectorAll("button")) btn.disabled = busy;
   if (!micBtn.hidden) micBtn.disabled = busy;
+}
+
+/**
+ * Speak one reply aloud. With ElevenLabs configured, the server synthesizes
+ * the line via POST /api/tts and the avatar plays that audio through
+ * presentWithAudio() — the same BYO-TTS path live mode uses for Gemini's
+ * audio, so lip-sync and [MOTION] markup still work. The markup stays in the
+ * content arg (the widget resolves and strips it internally); it must NOT
+ * reach the TTS text or the voice would read it aloud — forDisplay() strips
+ * it. present() is the fallback both when ElevenLabs isn't configured and
+ * when a TTS request fails: a different voice beats a silent avatar.
+ */
+async function speakReply(text, options) {
+  const spoken = expandMotionTags(text);
+  if (config?.elevenlabs) {
+    try {
+      const pcm = await ttsRequest(forDisplay(text));
+      return await presenter.presentWithAudio(
+        pcmToWav(new Uint8Array(pcm), 24000),
+        spoken,
+        options,
+      );
+    } catch (err) {
+      console.error(
+        `FriendChat: ElevenLabs TTS failed (${err.message}) — falling back to present()`,
+      );
+    }
+  }
+  return presenter.present(spoken, options);
 }
 
 async function sendMessage(text) {
@@ -185,7 +307,12 @@ async function sendMessage(text) {
     const turns = history.slice(-MAX_HISTORY_TURNS);
     const { choices } = await request("/api/chat", {
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "system",
+          content:
+            SYSTEM_PROMPT +
+            `\n\nReply in ${t().llmLang} only, even if the user writes in a different language.`,
+        },
         ...turns.map(({ role, text }) => ({ role, content: text })),
       ],
     });
@@ -196,13 +323,13 @@ async function sendMessage(text) {
     appendMessage("assistant", forDisplay(withoutEmo));
     history.push({ role: "assistant", text: reply });
     presenter.setThinking?.(false);
-    const result = await presenter.present(expandMotionTags(withoutEmo), options);
+    const result = await speakReply(withoutEmo, options);
     if (!result?.success)
-      console.error(`FriendChat: present() failed (${result?.code}): ${result?.message ?? ""}`);
+      console.error(`FriendChat: playback failed (${result?.code}): ${result?.message ?? ""}`);
   } catch (err) {
     if (history.at(-1)?.role === "user") history.pop();
     presenter.setThinking?.(false);
-    appendMessage("error", FAILURE_REPLY);
+    appendMessage("error", t().failure);
     console.error(`FriendChat: ${err.message}`);
   } finally {
     setBusy(false);
@@ -217,14 +344,48 @@ chatForm.addEventListener("submit", (event) => {
   sendMessage(text);
 });
 
-for (const s of STARTERS) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.textContent = `${s.icon} ${s.en}`;
-  btn.disabled = true;
-  btn.addEventListener("click", () => sendMessage(s.en));
-  starterTiles.append(btn);
+// ── Language switch — the EN | 日本語 toggle in the header. Rebuilds the
+// starter tiles and rewrites the page copy; history stays put, and the next
+// reply just comes back in the new language. Disabled state on a rebuild
+// mirrors the other controls: hidden pre-Ready, sendBtn.disabled mid-send.
+function renderStarters() {
+  starterTiles.replaceChildren();
+  for (const s of t().starters) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = `${s.icon} ${s.text}`;
+    btn.disabled = sendBtn.disabled || chatPanel.hidden;
+    btn.addEventListener("click", () => sendMessage(s.text));
+    starterTiles.append(btn);
+  }
 }
+
+function setLang(next) {
+  lang = next;
+  localStorage.setItem("buddy-lang", next);
+  document.documentElement.lang = next;
+  document.title = t().docTitle;
+  document.querySelector(".logo small").textContent = t().tagline;
+  document.querySelector(".lesson h1").textContent = t().h1;
+  document.querySelector(".lede").textContent = t().lede;
+  chatInput.placeholder = t().placeholder;
+  sendBtn.textContent = t().send;
+  liveBtn.textContent = liveBtn.classList.contains("active")
+    ? t().liveStop
+    : t().liveStart;
+  if (recognition) recognition.lang = t().speechLang;
+  for (const el of document.querySelectorAll(".lang-switch button")) {
+    el.classList.toggle("active", el.dataset.lang === next);
+  }
+  renderStarters();
+}
+
+for (const el of document.querySelectorAll(".lang-switch button")) {
+  el.addEventListener("click", () => {
+    if (el.dataset.lang !== lang) setLang(el.dataset.lang);
+  });
+}
+setLang(lang);
 
 // ── Voice input — browser speech-to-text (Web Speech API), NOT real-time
 // speech-to-speech. Tap, speak one line, it's transcribed into chatInput
@@ -234,10 +395,10 @@ for (const s of STARTERS) {
 const SpeechRecognitionCtor =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SpeechRecognitionCtor) {
-  const recognition = new SpeechRecognitionCtor();
+  recognition = new SpeechRecognitionCtor();
   recognition.continuous = false;
   recognition.interimResults = false;
-  recognition.lang = navigator.language || "en-US";
+  recognition.lang = t().speechLang;
   let listening = false;
 
   recognition.addEventListener("result", (event) => {
@@ -349,7 +510,7 @@ async function playLiveTurn() {
 
 function setLiveUiActive(active) {
   liveBtn.classList.toggle("active", active);
-  liveBtn.textContent = active ? "⏹ Stop live" : "🔴 Go live (speech-to-speech)";
+  liveBtn.textContent = active ? t().liveStop : t().liveStart;
   // Live mode owns the mic and the avatar's speech queue — the text/tile
   // chat and the Web-Speech mic button would just conflict with it.
   setBusy(active);
@@ -378,15 +539,20 @@ async function startLive() {
     await presenter.resumeAudioPlayback?.();
     audioUnlocked = true;
   }
-  liveStatus.textContent = "Connecting…";
-  const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live-ws`;
+  liveStatus.textContent = t().liveConnecting;
+  // ?lang= tells the relay which reply language to put in the Gemini Live
+  // session's system prompt — the session is fixed once opened, so a
+  // language switch mid-session takes effect on the next Go-live.
+  const wsUrl =
+    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}` +
+    `/live-ws?lang=${lang}`;
   liveWs = new WebSocket(wsUrl);
 
   liveWs.addEventListener("open", async () => {
     try {
       liveStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
     } catch (err) {
-      liveStatus.textContent = "Microphone permission denied.";
+      liveStatus.textContent = t().micDenied;
       stopLive();
       return;
     }
@@ -417,7 +583,7 @@ async function startLive() {
       );
     };
 
-    liveStatus.textContent = "🎙️ Listening — talk anytime";
+    liveStatus.textContent = t().liveListening;
     setLiveUiActive(true);
   });
 
@@ -445,7 +611,7 @@ async function startLive() {
     if (liveBtn.classList.contains("active")) stopLive();
   });
   liveWs.addEventListener("error", () => {
-    liveStatus.textContent = "Connection error.";
+    liveStatus.textContent = t().liveConnError;
   });
 }
 
@@ -469,7 +635,7 @@ config = await start().catch((err) => {
   document.getElementById("stage-loading")?.remove();
   const stageError = document.getElementById("stage-error");
   if (stageError) {
-    stageError.textContent = "Couldn't start the avatar. Check the console.";
+    stageError.textContent = t().stageError;
     stageError.hidden = false;
   }
   console.error(`FriendChat: ${err.message}`);

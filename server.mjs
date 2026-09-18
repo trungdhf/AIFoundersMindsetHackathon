@@ -42,6 +42,19 @@ const LLM_API_KEY = process.env.LLM_API_KEY;
 // and logged in — see the README note near LLM_PROVIDER=vertex.
 const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID;
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "us-central1";
+// ElevenLabs TTS — opt-in, used by the friend-chat demo's /api/tts route. When
+// ELEVENLABS_API_KEY is set the avatar speaks replies with an ElevenLabs voice
+// (BYO-TTS through presenter.presentWithAudio()); unset, it falls back to the
+// Connect voice via present(). The voice/model defaults are ElevenLabs'
+// documented premade values — Rachel and the multilingual model, which keeps
+// the "reply in whatever language" behavior working across languages.
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_BASE_URL =
+  process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
+const ELEVENLABS_VOICE_ID =
+  process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // Rachel (premade)
+const ELEVENLABS_MODEL_ID =
+  process.env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
 let vertexTokenCache = { token: null, expiresAt: 0 };
 async function getVertexAccessToken() {
   if (vertexTokenCache.token && Date.now() < vertexTokenCache.expiresAt) {
@@ -620,7 +633,7 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
-// GET /api/config → { mock, chat, presenterUrl, fixedTarget, chatbotId, subscriptionUrl }.
+// GET /api/config → { mock, chat, elevenlabs, presenterUrl, fixedTarget, chatbotId, subscriptionUrl }.
 // Cheap to poll: `chat` reports the presence of LLM_API_KEY, never the key, and
 // resolveEmbedConfig()'s catalog lookup is memoized. No field says whether a
 // value was pinned or auto-picked — nothing may render that. This route has no
@@ -636,6 +649,7 @@ app.get(
     res.json({
       mock: USE_MOCK,
       chat: Boolean(process.env.LLM_API_KEY),
+      elevenlabs: Boolean(ELEVENLABS_API_KEY),
       presenterUrl: PRESENTER_URL,
       fixedTarget: target,
       chatbotId,
@@ -1316,6 +1330,70 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+// POST /api/tts
+// Request:  { text } — one spoken line.
+// Returns:  raw PCM audio (s16le mono 24 kHz) as application/octet-stream; the
+//           browser wraps it in a WAV header and hands it to
+//           presenter.presentWithAudio(). Errors come back as JSON instead.
+// Errors:   501 until ELEVENLABS_API_KEY is set · 502 ElevenLabs unreachable.
+// ElevenLabs only ever sees plain spoken text — Perxona's [MOTION ...] /
+// (emo:...) markup would be read aloud, so callers strip it before sending
+// (the markup travels separately in presentWithAudio()'s content arg, where
+// the widget resolves it). Same spending caveat as /api/chat: this route is
+// unauthenticated and every call bills the ELEVENLABS_API_KEY account, so the
+// text gets a hard cap — replies are prompted to be 1-3 sentences anyway.
+const TTS_MAX_CHARS = 2000;
+
+app.post(
+  "/api/tts",
+  route(async (req, res) => {
+    if (!ELEVENLABS_API_KEY) {
+      res.status(501).json({
+        error:
+          "ELEVENLABS_API_KEY not configured. Set it in .env to enable ElevenLabs TTS.",
+      });
+      return;
+    }
+    const text = req.body?.text;
+    if (typeof text !== "string" || !text.trim()) {
+      res.status(400).json({ error: "'text' is required." });
+      return;
+    }
+    if (text.length > TTS_MAX_CHARS) {
+      res
+        .status(400)
+        .json({ error: `'text' must be ${TTS_MAX_CHARS} characters or fewer.` });
+      return;
+    }
+    const r = await fetch(
+      `${ELEVENLABS_BASE_URL}/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}` +
+        "?output_format=pcm_24000",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": ELEVENLABS_API_KEY,
+        },
+        body: JSON.stringify({ text, model_id: ELEVENLABS_MODEL_ID }),
+      },
+    );
+    if (!r.ok) {
+      const payload = await r.json().catch(() => ({}));
+      throw Object.assign(new Error("ElevenLabs TTS failed"), {
+        status: 502,
+        payload: {
+          error:
+            payload?.detail?.message ??
+            (typeof payload?.detail === "string" ? payload.detail : null) ??
+            `ElevenLabs TTS failed with status ${r.status}`,
+        },
+      });
+    }
+    res.set("Content-Type", "application/octet-stream");
+    res.send(Buffer.from(await r.arrayBuffer()));
+  }),
+);
+
 // ── Gemini Live relay (WebSocket) ───────────────────────────────────────────
 //
 // True speech-to-speech: the browser streams mic audio in, Gemini Live
@@ -1331,15 +1409,30 @@ app.post("/api/chat", async (req, res) => {
 // response modality, not TEXT.
 const GEMINI_LIVE_MODEL =
   process.env.GEMINI_LIVE_MODEL || "gemini-live-2.5-flash-native-audio";
-const LIVE_SYSTEM_PROMPT =
-  "You are a warm, easygoing, curious friend having a casual voice " +
-  "conversation. Talk about anything. Reply in whatever language the other " +
-  "person speaks. Keep responses short and natural, like real speech.";
+// Same Buddy persona as friend-chat's SYSTEM_PROMPT, reworded for voice.
+// The reply language is per connection: the browser appends ?lang=en|ja to
+// /live-ws and the directive is tacked on here — keep the base prompt
+// language-neutral so it composes with either. Keep the persona half in
+// sync with friend-chat's SYSTEM_PROMPT when it changes.
+const LIVE_SYSTEM_PROMPT_BASE =
+  "You are Buddy, a warm, steady companion inside a company's employee " +
+  "app — part onboarding buddy for new hires, part wellbeing check-in for " +
+  "everyone. Listen first, encourage genuinely, and for anything serious " +
+  "gently point the person to their manager or HR. Keep responses short " +
+  "and natural, like real speech.";
+function liveSystemPrompt(lang) {
+  const langName = lang === "ja" ? "Japanese" : "English";
+  return `${LIVE_SYSTEM_PROMPT_BASE} Reply in ${langName} only.`;
+}
 
 function startLiveRelay(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: "/live-ws" });
 
-  wss.on("connection", async (browserWs) => {
+  wss.on("connection", async (browserWs, req) => {
+    const lang =
+      new URL(req.url, "http://localhost").searchParams.get("lang") === "ja"
+        ? "ja"
+        : "en";
     if (LLM_PROVIDER !== "vertex" || !VERTEX_PROJECT_ID) {
       browserWs.send(
         JSON.stringify({
@@ -1377,7 +1470,7 @@ function startLiveRelay(httpServer) {
         config: {
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {},
-          systemInstruction: { parts: [{ text: LIVE_SYSTEM_PROMPT }] },
+          systemInstruction: { parts: [{ text: liveSystemPrompt(lang) }] },
         },
         callbacks: {
           onmessage: (message) => forwardGeminiMessage(browserWs, message),

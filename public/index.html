@@ -99,14 +99,18 @@
         in sequence. No chatbot needed. Added for the hackathon.
       </li>
       <li>
-        <a href="demos/friend-chat/">Friend Chat</a> —
-        <strong>the avatar as a casual companion, not a script.</strong> Talks
-        about anything, in whatever language you write. Goes through
-        <code>POST /api/chat</code> (Option C — your own LLM) instead of the
-        Connect-hosted chatbot, so it isn't tied to one persona. Configured
-        here for Gemini on Vertex AI (<code>LLM_PROVIDER=vertex</code>,
-        auth via <code>gcloud</code> — see <code>.env</code>); the same code
-        works unchanged with OpenAI, Anthropic, or a local Ollama model.
+        <a href="demos/friend-chat/">Buddy</a> —
+        <strong>the avatar as an employee companion, not a script.</strong>
+        An onboarding and wellbeing buddy for a company's people — first-week
+        questions, rough-day check-ins, with an EN | 日本語 switch. Goes
+        through <code>POST /api/chat</code> (Option C — your own LLM) instead
+        of the Connect-hosted chatbot, and speaks through ElevenLabs via
+        <code>POST /api/tts</code> + <code>presentWithAudio()</code> when
+        <code>ELEVENLABS_API_KEY</code> is set (the Connect voice is the
+        fallback). Configured here for Gemini on Vertex AI
+        (<code>LLM_PROVIDER=vertex</code>, auth via <code>gcloud</code> — see
+        <code>.env</code>); the same code works unchanged with OpenAI,
+        Anthropic, or a local Ollama model.
       </li>
     </ul>
     <!-- The one thing this page checks. Embed consumes a chatbot; Studio is
