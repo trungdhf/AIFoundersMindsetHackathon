@@ -205,7 +205,9 @@ async function ttsRequest(text) {
   const res = await fetch("/api/tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    // lang picks the voice server-side — a native Japanese voice when the
+    // 日本語 mode is on (ELEVENLABS_VOICE_ID_JA), the default otherwise.
+    body: JSON.stringify({ text, lang }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

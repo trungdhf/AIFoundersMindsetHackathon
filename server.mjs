@@ -53,6 +53,12 @@ const ELEVENLABS_BASE_URL =
   process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
 const ELEVENLABS_VOICE_ID =
   process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // Rachel (premade)
+// Optional Japanese voice for /api/tts when the request says lang="ja" —
+// premade voices are all EN-accented, so a native JA voice (added from the
+// ElevenLabs Voice Library) sounds much better in Japanese mode. Falls back
+// to ELEVENLABS_VOICE_ID when unset.
+const ELEVENLABS_VOICE_ID_JA =
+  process.env.ELEVENLABS_VOICE_ID_JA || ELEVENLABS_VOICE_ID;
 const ELEVENLABS_MODEL_ID =
   process.env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
 let vertexTokenCache = { token: null, expiresAt: 0 };
@@ -1350,7 +1356,8 @@ app.post("/api/chat", async (req, res) => {
 });
 
 // POST /api/tts
-// Request:  { text } — one spoken line.
+// Request:  { text, lang? } — one spoken line; lang="ja" selects
+//           ELEVENLABS_VOICE_ID_JA (falls back to the default voice).
 // Returns:  raw PCM audio (s16le mono 24 kHz) as application/octet-stream; the
 //           browser wraps it in a WAV header and hands it to
 //           presenter.presentWithAudio(). Errors come back as JSON instead.
@@ -1384,8 +1391,10 @@ app.post(
         .json({ error: `'text' must be ${TTS_MAX_CHARS} characters or fewer.` });
       return;
     }
+    const voiceId =
+      req.body?.lang === "ja" ? ELEVENLABS_VOICE_ID_JA : ELEVENLABS_VOICE_ID;
     const r = await fetch(
-      `${ELEVENLABS_BASE_URL}/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}` +
+      `${ELEVENLABS_BASE_URL}/v1/text-to-speech/${encodeURIComponent(voiceId)}` +
         "?output_format=pcm_24000",
       {
         method: "POST",
