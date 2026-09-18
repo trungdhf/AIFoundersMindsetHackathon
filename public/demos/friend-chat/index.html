@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>友達 | AI Friend</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <span class="logo">友達 <small>AI Friend — chat about anything</small></span>
+    </header>
+
+    <main class="page">
+      <aside class="avatar-slot">
+        <div id="stage" class="stage">
+          <sv-presenter></sv-presenter>
+          <div id="stage-loading" class="stage-loading" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div id="stage-error" class="stage-error" hidden></div>
+          <div id="stage-caption" class="stage-caption" hidden></div>
+        </div>
+      </aside>
+
+      <section class="lesson">
+        <h1>Just here to chat</h1>
+        <p class="lede">
+          No script, no quiz — say whatever's on your mind. Powered by Gemini
+          on Vertex AI, not the Perxona chatbot, so it can talk about
+          literally anything.
+        </p>
+        <div id="starter-tiles" class="tiles tiles--topics"></div>
+
+        <!-- True speech-to-speech via Gemini Live on Vertex AI — separate
+             from the text/mic-transcribe chat below. Mic audio streams to
+             the server (see server.mjs's /live-ws relay), Gemini streams
+             synthesized speech back, and each full turn is played through
+             the avatar with presenter.presentWithAudio() for lip-sync. -->
+        <div class="live-row">
+          <button id="live-btn" class="live-btn" type="button" disabled>
+            🔴 Go live (speech-to-speech)
+          </button>
+          <span id="live-status" class="live-status"></span>
+        </div>
+
+        <div id="chat" class="chat" hidden>
+          <ul id="chat-log" class="chat-log"></ul>
+          <form id="chat-form" class="chat-form">
+            <!-- Browser speech-to-text (Web Speech API) — not real-time
+                 speech-to-speech (that would be Gemini Live/Realtime API,
+                 a much bigger WebSocket integration). This transcribes what
+                 you say into the same text box, then sends it through the
+                 normal chat flow. Chrome/Edge only; hidden elsewhere. -->
+            <button id="mic-btn" class="mic-btn" type="button" hidden>🎤</button>
+            <input
+              id="chat-input"
+              class="chat-input"
+              type="text"
+              autocomplete="off"
+              placeholder="Say anything…"
+              aria-label="Message"
+            />
+            <button id="send-btn" class="send-btn" type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

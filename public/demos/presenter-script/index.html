@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Script Presenter | Perxona Connect Kit</title>
+    <style>
+      :root {
+        --bg: #0f1115; --panel: #181b22; --panel-2: #21252e; --line: #2c313c;
+        --text: #e6e8ec; --muted: #9aa1ac; --accent: #6ea8fe; --accent-ink: #0b1220;
+        --ok: #4ade80; --err: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      .wrap {
+        display: grid; grid-template-columns: 1fr 420px; gap: 16px;
+        padding: 16px; max-width: 1300px; margin: 0 auto; min-height: 100vh;
+      }
+      @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+      .stage {
+        position: relative; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 12px; aspect-ratio: 3 / 4; max-height: 75vh; overflow: hidden;
+      }
+      sv-presenter { display: block; width: 100%; height: 100%; }
+      .stage-msg {
+        position: absolute; inset: 0; display: grid; place-items: center;
+        text-align: center; padding: 24px; color: var(--muted);
+      }
+      .caption {
+        position: absolute; left: 0.75rem; right: 0.75rem; bottom: 0.75rem;
+        padding: 0.5rem 0.8rem; border-radius: 0.6rem;
+        background: rgba(9,12,17,0.8); font-weight: 600; text-align: center;
+      }
+      .caption:empty { display: none; }
+      .panel {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        padding: 14px; display: flex; flex-direction: column; gap: 10px;
+      }
+      textarea {
+        width: 100%; min-height: 260px; resize: vertical;
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+        color: var(--text); padding: 10px; font: inherit;
+      }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      button {
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+        color: var(--text); padding: 8px 14px; font: inherit; cursor: pointer;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+      .status { font-size: 12px; color: var(--muted); }
+      .status b { color: var(--text); }
+      .hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+      code { background: var(--panel-2); padding: 0.1rem 0.3rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="stage" id="stage">
+        <!-- No "hidden" attribute here: some presenter builds need real layout
+             dimensions (not display:none) to set up their 3D canvas during
+             init, or PRESENTER_STATUS never fires. The loading/error overlays
+             below sit on top of it (position:absolute) until Ready instead. -->
+        <sv-presenter></sv-presenter>
+        <div class="stage-msg" id="stage-msg">Loading avatar…</div>
+        <div class="caption" id="caption"></div>
+      </div>
+
+      <div class="panel">
+        <div class="status" id="status">Loading…</div>
+        <textarea id="script" placeholder="Paste your presentation script here — one line per sentence/beat.
+
+Optional tags per line, same as the lesson app:
+[wave] [bow] [excited] [ok] [thumbsup] [no] [think] [clap] [point] [present] [question]
+(emo:joy/high) (emo:curiosity) ... at the end of a line
+
+Example:
+[wave] Hi everyone, thanks for having us today! (emo:excitement/high)
+[present] We built an AI Japanese teacher on the Perxona Connect Kit.
+[point] It teaches nine topics and a full multiple-choice quiz — all tap only."></textarea>
+        <div class="row">
+          <button class="primary" id="btn-start" disabled>▶ Start presenting</button>
+          <button id="btn-stop" disabled>⏹ Stop</button>
+        </div>
+        <div class="status" id="progress"></div>
+        <div class="hint">
+          Each non-empty line is spoken as one <code>present()</code> call, in order, so playback
+          always matches the line order even if you click Start again mid-way. First click unlocks
+          audio (browser autoplay policy). Lines are capped at 2000 characters each — split a long
+          paragraph across lines if needed.
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      const $ = (s) => document.querySelector(s);
+      const presenter = $("sv-presenter");
+      const statusEl = $("#status");
+      const progressEl = $("#progress");
+      const caption = $("#caption");
+      const script = $("#script");
+      const startBtn = $("#btn-start");
+      const stopBtn = $("#btn-stop");
+
+      let ready = false;
+      let audioUnlocked = false;
+      let stopRequested = false;
+      let running = false;
+
+      const EMOTIONS = new Set([
+        "joy","excitement","admiration","caring","gratitude","sadness",
+        "disappointment","annoyance","embarrassment","curiosity","surprise",
+        "realization","confusion",
+      ]);
+      const INTENSITIES = new Set(["low","neutral","high"]);
+
+      function extractEmotion(text) {
+        const options = {};
+        const cleaned = text.replace(/\(emo:\s*([a-z]+)(?:\s*\/\s*([a-z]+))?\s*\)/gi, (m, emo, inten) => {
+          emo = emo.toLowerCase();
+          if (EMOTIONS.has(emo)) {
+            options.emotion = emo;
+            if (inten && INTENSITIES.has(inten.toLowerCase())) options.intensity = inten.toLowerCase();
+          }
+          return "";
+        }).trim();
+        return { text: cleaned, options };
+      }
+      // Same tag set as the lesson app (myapp/), mapped to the avatar pinned
+      // in .env as DEMO_FIXED_AVATAR_ID (cc085a01_female_xr_01, skeleton
+      // f_cc). If you point this server at a different avatar, re-run
+      // GET /api/avatars/<id>/motions and rebuild this map to match.
+      const MOTION_TAGS = {
+        "[wave]": "01KZD8C3PH4YGK56WKYEA3CFXH",
+        "[bow]": "01KZD89FZHTMFERT1G1KZYY3GC",
+        "[excited]": "01KZD8DC4MXM491S0J5GM8C05K",
+        "[ok]": "01K4M9ABYK571VXG84BACSKK1T",
+        "[thumbsup]": "01K4M9AQJEPKVX3HDKWWY4BH43",
+        "[no]": "01K4M966TXRHH1GD1019WK8J0N",
+        "[think]": "01KZD8BA45JPF4SVF5M1A3F3J8",
+        "[clap]": "01KZD87C8R63BPD4555KWD2S75",
+        "[point]": "01KZD8E8P8F0BV6QABJVQV8Y86",
+        "[present]": "01KZD86YJ04KR4A7PZ5A0NRW5P",
+        "[question]": "01M2838R2DBQM1RXVW8SWM7HE0",
+      };
+      /** Rewrite the first known "[wave]" tag into "[MOTION <id>:1]" at the
+       * front of the line; strip every "[x]" tag either way. */
+      function expandMotionTags(text) {
+        let motionId = null;
+        const stripped = text
+          .replace(/\[[a-z]+\]/g, (tag) => {
+            if (motionId === null && MOTION_TAGS[tag]) motionId = MOTION_TAGS[tag];
+            return "";
+          })
+          .trim();
+        return motionId ? `[MOTION ${motionId}:1] ${stripped}` : stripped;
+      }
+
+      async function api(path) {
+        const res = await fetch(path);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || data.details || res.statusText);
+        return data;
+      }
+
+      async function init() {
+        try {
+          const cfg = await api("/api/config");
+          if (cfg.mock) throw new Error("Server is in mock mode — no live presenter.");
+          if (!cfg.fixedTarget)
+            throw new Error("No avatar configured — set DEMO_FIXED_AVATAR_ID/SCENE_ID in .env, or use the Playground page to pick one.");
+
+          await new Promise((res, rej) => {
+            const s = Object.assign(document.createElement("script"), {
+              type: "module", src: cfg.presenterUrl, onload: res,
+              onerror: () => rej(new Error("presenter engine failed to load")),
+            });
+            document.head.append(s);
+          });
+          await Promise.race([
+            customElements.whenDefined?.("sv-presenter") ?? Promise.resolve(),
+            new Promise((r) => setTimeout(r, 3000)),
+          ]);
+
+          const { connect_key } = await api("/api/connect-key");
+          statusEl.innerHTML = "Initializing avatar…";
+          await presenter.initializeWithConnectKey(connect_key, cfg.fixedTarget);
+        } catch (err) {
+          statusEl.innerHTML = `<b style="color:var(--err)">${err.message}</b>`;
+          $("#stage-msg").textContent = err.message;
+        }
+      }
+
+      presenter.addEventListener("PRESENTER_STATUS", (e) => {
+        if (e.detail?.status !== "Ready") return;
+        ready = true;
+        presenter.hidden = false;
+        $("#stage-msg").remove();
+        statusEl.innerHTML = "<b style='color:var(--ok)'>Ready</b> — paste your script and press Start.";
+        startBtn.disabled = false;
+      });
+      presenter.addEventListener("CONNECT_KEY_REJECTED", () => {
+        statusEl.innerHTML = "<b style='color:var(--err)'>Connect key rejected</b>";
+      });
+      presenter.addEventListener("PLAYING_SPEECH_TEXT", (e) => {
+        caption.textContent = e.detail?.text ?? "";
+      });
+      presenter.addEventListener("ALL_PERFORMANCE_FINISHED", () => {
+        caption.textContent = "";
+      });
+
+      function setRunning(isRunning) {
+        running = isRunning;
+        startBtn.disabled = isRunning || !ready;
+        stopBtn.disabled = !isRunning;
+        script.readOnly = isRunning;
+      }
+
+      startBtn.addEventListener("click", async () => {
+        if (!ready || running) return;
+        stopRequested = false;
+        setRunning(true);
+        try {
+          if (!audioUnlocked) {
+            await presenter.resumeAudioPlayback?.();
+            audioUnlocked = true;
+          }
+          const lines = script.value.split("\n").map((l) => l.trim()).filter(Boolean);
+          for (let i = 0; i < lines.length; i++) {
+            if (stopRequested) break;
+            progressEl.textContent = `Line ${i + 1} / ${lines.length}`;
+            const { text: withoutEmo, options } = extractEmotion(lines[i]);
+            const clean = expandMotionTags(withoutEmo);
+            if (!clean) continue;
+            const r = await presenter.present(clean, options);
+            if (!r?.success)
+              console.error(`Line ${i + 1} failed (${r?.code}): ${r?.message ?? ""}`);
+          }
+          if (!stopRequested) progressEl.textContent = "Done.";
+        } catch (err) {
+          progressEl.textContent = `Error: ${err.message}`;
+        } finally {
+          setRunning(false);
+        }
+      });
+
+      stopBtn.addEventListener("click", () => {
+        stopRequested = true;
+        presenter.interruptPresentation?.();
+        setRunning(false);
+        progressEl.textContent = "Stopped.";
+      });
+
+      init();
+    </script>
+  </body>
+</html>

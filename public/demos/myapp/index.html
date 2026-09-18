@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>先生 | AI Japanese Teacher</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <span class="logo">先生 <small>AI Japanese Teacher</small></span>
+    </header>
+
+    <main class="page">
+      <!-- ── The avatar ─────────────────────────────────────────────────── -->
+      <aside class="avatar-slot">
+        <div id="stage" class="stage">
+          <sv-presenter></sv-presenter>
+          <div id="stage-loading" class="stage-loading" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div id="stage-error" class="stage-error" hidden></div>
+
+          <!-- Vocabulary flashcard overlay — shown only during the "単語"
+               topic. Word + reading + picture come from a fixed local deck
+               (see VOCAB_DECK in app.js), not the chatbot, so a picture can
+               always be paired with the right word. -->
+          <div id="vocab-card" class="vocab-card" hidden>
+            <div id="vocab-emoji" class="vocab-emoji"></div>
+            <div id="vocab-hiragana" class="vocab-hiragana"></div>
+            <div id="vocab-word" class="vocab-word"></div>
+            <div id="vocab-meta" class="vocab-meta"></div>
+            <div class="vocab-actions">
+              <button type="button" id="vocab-repeat">🔁 Repeat</button>
+              <button type="button" id="vocab-next">Next word ➡</button>
+            </div>
+          </div>
+
+          <!-- Quiz: the question text (top) and its answer buttons (bottom),
+               both overlaid on the stage instead of living in the side panel.
+               Populated together in renderChoices() — see app.js. The
+               chatbot sends "[CHOICES: a | b | c]"; everything before it is
+               the question text. -->
+          <div id="stage-question" class="stage-question" hidden></div>
+          <div id="dynamic-choices" class="tiles tiles--choices" hidden></div>
+
+          <div id="stage-caption" class="stage-caption" hidden></div>
+        </div>
+      </aside>
+
+      <!-- ── Lesson panel ───────────────────────────────────────────────── -->
+      <section class="lesson">
+        <h1>Choose a lesson topic</h1>
+        <p class="lede">
+          Tap a topic to start the lesson, or use the quick-reply tags while
+          learning — no typing required.
+        </p>
+        <div id="topic-tiles" class="tiles tiles--topics"></div>
+
+        <div id="chat" class="chat" hidden>
+          <!-- Hidden for a cleaner screen — what's being said already shows as
+               a caption on the stage (#stage-caption) and on the vocab card.
+               Still populated in app.js in case you want it back later. -->
+          <ul id="chat-log" class="chat-log" hidden></ul>
+
+          <div id="quick-tiles" class="tiles tiles--quick"></div>
+
+          <form id="chat-form" class="chat-form">
+            <input
+              id="chat-input"
+              class="chat-input"
+              type="text"
+              autocomplete="off"
+              placeholder="Or type your own question in English/Japanese…"
+              aria-label="Message"
+            />
+            <button id="send-btn" class="send-btn" type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

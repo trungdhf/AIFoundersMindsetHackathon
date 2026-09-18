@@ -1,0 +1,386 @@
+<title>Sensei, Explained</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --paper:#f6f1e6;
+    --paper-2:#efe7d5;
+    --ink:#241f18;
+    --ink-soft:#5c5346;
+    --indigo:#233d5e;
+    --indigo-2:#3a5a82;
+    --indigo-wash:#e3e9ef;
+    --stamp:#a8392c;
+    --rule:#d9cfb8;
+    --font-display:'Shippori Mincho', 'Noto Serif JP', serif;
+    --font-body:'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#1c1912;
+      --paper-2:#252017;
+      --ink:#efe7d5;
+      --ink-soft:#b8ac95;
+      --indigo:#9fc0e8;
+      --indigo-2:#7ba3d1;
+      --indigo-wash:#28374a;
+      --stamp:#e17361;
+      --rule:#3a3327;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1c1912;
+    --paper-2:#252017;
+    --ink:#efe7d5;
+    --ink-soft:#b8ac95;
+    --indigo:#9fc0e8;
+    --indigo-2:#7ba3d1;
+    --indigo-wash:#28374a;
+    --stamp:#e17361;
+    --rule:#3a3327;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    line-height:1.65;
+    padding-block:clamp(2.5rem,6vw,5rem);
+  }
+  .wrap{
+    width:min(760px, calc(100% - 2.5rem));
+    margin-inline:auto;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header{
+    display:flex;
+    flex-direction:column;
+    gap:0.6rem;
+    padding-bottom:2rem;
+    border-bottom:1px solid var(--rule);
+    margin-bottom:2.4rem;
+  }
+  .kicker{
+    font-size:0.78rem;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--indigo-2);
+    font-weight:700;
+  }
+  h1{
+    font-family:var(--font-display);
+    font-weight:800;
+    font-size:clamp(2.1rem, 6vw, 3.1rem);
+    line-height:1.08;
+    margin:0;
+    text-wrap:balance;
+    display:flex;
+    align-items:baseline;
+    gap:0.55rem;
+    flex-wrap:wrap;
+  }
+  h1 .kanji{
+    color:var(--indigo);
+  }
+  h1 .en{
+    font-size:0.42em;
+    font-weight:500;
+    color:var(--ink-soft);
+    font-family:var(--font-body);
+  }
+  .tagline{
+    max-width:52ch;
+    color:var(--ink-soft);
+    font-size:1.02rem;
+  }
+  .meta-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:0.5rem;
+    margin-top:0.4rem;
+  }
+  .meta-row span{
+    font-size:0.76rem;
+    padding:0.28rem 0.65rem;
+    border:1px solid var(--rule);
+    border-radius:999px;
+    color:var(--ink-soft);
+    background:var(--paper-2);
+  }
+
+  /* ── At a glance strip ──────────────────────────────────── */
+  .glance{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:1px;
+    background:var(--rule);
+    border:1px solid var(--rule);
+    border-radius:10px;
+    overflow:hidden;
+    margin-bottom:2.6rem;
+  }
+  .glance div{
+    background:var(--paper-2);
+    padding:0.9rem 0.6rem;
+    text-align:center;
+  }
+  .glance .num{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.5rem;
+    color:var(--indigo);
+    font-variant-numeric:tabular-nums;
+    display:block;
+  }
+  .glance .label{
+    font-size:0.68rem;
+    color:var(--ink-soft);
+    letter-spacing:0.03em;
+  }
+
+  /* ── Sections ───────────────────────────────────────────── */
+  section{
+    display:flex;
+    gap:1.3rem;
+    padding-block:2rem;
+    border-bottom:1px solid var(--rule);
+  }
+  section:last-of-type{ border-bottom:none; }
+
+  .num-mark{
+    flex:none;
+    width:2.4rem;
+    height:2.4rem;
+    border-radius:50%;
+    background:var(--indigo-wash);
+    color:var(--indigo);
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.15rem;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .section-body{ min-width:0; flex:1; }
+  h2{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.4rem;
+    margin:0 0 0.15rem;
+    text-wrap:balance;
+  }
+  h2 small{
+    display:block;
+    font-family:var(--font-body);
+    font-weight:400;
+    font-size:0.78rem;
+    color:var(--ink-soft);
+    margin-top:0.15rem;
+  }
+  section p{
+    margin:0.7rem 0 0;
+    max-width:62ch;
+  }
+  section p + p{ margin-top:0.9rem; }
+  .jp{ color:var(--indigo); font-weight:500; }
+
+  /* ── Problem list ───────────────────────────────────────── */
+  .problem-list{
+    display:flex;
+    flex-direction:column;
+    gap:0.9rem;
+    margin-top:0.9rem;
+  }
+  .problem-list article{
+    padding:0.85rem 1rem;
+    background:var(--paper-2);
+    border-left:3px solid var(--stamp);
+    border-radius:0 8px 8px 0;
+  }
+  .problem-list h3{
+    margin:0 0 0.25rem;
+    font-size:0.96rem;
+    font-weight:700;
+  }
+  .problem-list p{ margin:0; font-size:0.93rem; color:var(--ink-soft); max-width:60ch; }
+
+  /* ── Difference callouts ────────────────────────────────── */
+  .diffs{
+    display:flex;
+    flex-direction:column;
+    gap:0;
+    margin-top:0.9rem;
+  }
+  .diffs > div{
+    display:grid;
+    grid-template-columns:9rem 1fr;
+    gap:1rem;
+    padding-block:0.75rem;
+    border-top:1px solid var(--rule);
+  }
+  .diffs > div:first-child{ border-top:none; }
+  .diffs dt{
+    font-weight:700;
+    font-size:0.85rem;
+    color:var(--indigo-2);
+  }
+  .diffs dd{ margin:0; font-size:0.93rem; }
+
+  /* ── Footer ─────────────────────────────────────────────── */
+  footer{
+    margin-top:2.6rem;
+    padding-top:1.6rem;
+    border-top:1px solid var(--rule);
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:0.6rem;
+    font-size:0.82rem;
+    color:var(--ink-soft);
+  }
+  footer .stamp{
+    font-family:var(--font-display);
+    font-weight:700;
+    color:var(--stamp);
+    border:1.5px solid var(--stamp);
+    border-radius:6px;
+    padding:0.15rem 0.5rem;
+    font-size:0.75rem;
+    letter-spacing:0.04em;
+  }
+
+  @media (max-width:560px){
+    .glance{ grid-template-columns:repeat(2,1fr); }
+    section{ gap:0.9rem; }
+    .num-mark{ width:2rem; height:2rem; font-size:1rem; }
+    .diffs > div{ grid-template-columns:1fr; gap:0.2rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <span class="kicker">Hackvatar · Perxona Connect Kit submission</span>
+    <h1><span class="kanji">先生</span><span class="en">AI Japanese Teacher</span></h1>
+    <p class="tagline">A 3D avatar that teaches beginner Japanese and reacts like a teacher, not a chatbot with a face — built entirely tap-first, on Perxona's Connect Kit.</p>
+    <div class="meta-row">
+      <span>Vanilla JS · Node/Express</span>
+      <span>&lt;sv-presenter&gt; Web Component</span>
+      <span>Fixed lesson decks, no LLM drift</span>
+    </div>
+  </header>
+
+  <div class="glance">
+    <div><span class="num">9</span><span class="label">lesson topics</span></div>
+    <div><span class="num">14</span><span class="label">quiz questions</span></div>
+    <div><span class="num">0</span><span class="label">taps to type per lesson</span></div>
+    <div><span class="num">3</span><span class="label">TTS bugs found &amp; fixed</span></div>
+  </div>
+
+  <section>
+    <span class="num-mark">一</span>
+    <div class="section-body">
+      <h2>What we built<small>What did you build?</small></h2>
+      <p>
+        <span class="jp">先生</span> — an AI Japanese-teaching avatar on the Perxona Connect Kit.
+        The avatar leads short lessons across nine topics — greetings, numbers, family, food,
+        time &amp; days, shopping, directions, self-introduction, plus a dedicated vocabulary
+        deck — then tests what was covered in a 14-question multiple-choice quiz.
+      </p>
+      <p>
+        Every lesson card, quiz question and answer option is a tap. The student never has
+        to type kana they can't yet input; a free-text box stays open underneath for anyone
+        who wants to ask something outside the script.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <span class="num-mark">二</span>
+    <div class="section-body">
+      <h2>Who it's for<small>Who is it for?</small></h2>
+      <p>
+        English-speaking absolute beginners in Japanese — someone with no IME for kana, no
+        muscle memory for the keyboard layout, and five spare minutes rather than a course
+        to enrol in. The learner who wants a patient teacher on a phone screen, not an app
+        that assumes they can already type what they're trying to learn.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <span class="num-mark">三</span>
+    <div class="section-body">
+      <h2>The problem<small>What problem does it solve?</small></h2>
+      <div class="problem-list">
+        <article>
+          <h3>Typing is the wrong interface for a script you don't know</h3>
+          <p>Most lesson apps ask the student to type an answer in the language they're
+             still learning to write. This one answers everything — topic, quiz choice,
+             quick reply — with a single tap.</p>
+        </article>
+        <article>
+          <h3>A text-only tutor has no presence</h3>
+          <p>It can explain a word, but it can't celebrate a right answer or soften a wrong
+             one the way a person in the room would. The avatar reacts in character to
+             every turn — see 四, right.</p>
+        </article>
+        <article>
+          <h3>Multi-lingual speech synthesis mispronounces exactly what a language app needs</h3>
+          <p>A bare kanji read with Chinese pronunciation, an English sentence dragged into
+             a Japanese accent because it shared one utterance with a Japanese word, even a
+             stray escaped quote mark read aloud as "backslash." Each surfaced during
+             build and each now has a specific, tested fix in the code.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="num-mark">四</span>
+    <div class="section-body">
+      <h2>What makes it different<small>Be specific</small></h2>
+      <dl class="diffs">
+        <div>
+          <dt>Emoji, not stock photos</dt>
+          <dd>Every card pairs a word with an emoji picture on purpose — instant,
+              unambiguous, zero network calls, zero licensing to check. A downloaded
+              illustration is one more thing that can fail live on stage; an emoji can't.</dd>
+        </div>
+        <div>
+          <dt>Graded emotional feedback</dt>
+          <dd>Right answer → thumbs-up gesture, joy at high intensity. Wrong answer → a
+              gentle head-shake, a caring tone, then the correct answer — never
+              disappointment aimed at the student. The reaction is chosen per outcome,
+              not scripted once for the whole quiz.</dd>
+        </div>
+        <div>
+          <dt>A fixed curriculum, not a model's best guess</dt>
+          <dd>Lesson content, vocabulary and quiz questions are a hand-built deck, not
+              generated per session. Every run of the demo behaves identically, and
+              nothing depends on a model remembering a formatting instruction mid-quiz.</dd>
+        </div>
+        <div>
+          <dt>Three real TTS bugs, fixed at the source</dt>
+          <dd>山 read as Chinese → speak the hiragana, never the bare kanji. English
+              dragged into a Japanese accent → one language per utterance, never mixed.
+              "\"" read aloud as "backslash" → no straight quotes anywhere in spoken text.</dd>
+        </div>
+        <div>
+          <dt>A fork, not a rewrite</dt>
+          <dd>Built directly on the Connect Kit's own Embed template, zero framework —
+              so anything Perxona ships next for the kit lands in this project for free.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <footer>
+    <span>Built for Hackvatar — Build Your Own AI Avatar, September 12</span>
+    <span class="stamp">先生</span>
+  </footer>
+
+</div>

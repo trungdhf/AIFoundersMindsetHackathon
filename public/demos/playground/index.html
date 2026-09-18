@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playground | Perxona Connect Kit</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #181b22;
+        --panel-2: #21252e;
+        --line: #2c313c;
+        --text: #e6e8ec;
+        --muted: #9aa1ac;
+        --accent: #6ea8fe;
+        --accent-ink: #0b1220;
+        --ok: #4ade80;
+        --warn: #fbbf24;
+        --err: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      .wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 380px;
+        gap: 16px;
+        padding: 16px;
+        max-width: 1400px;
+        margin: 0 auto;
+        min-height: 100vh;
+      }
+      @media (max-width: 900px) {
+        .wrap { grid-template-columns: 1fr; }
+      }
+
+      /* Stage */
+      .stage-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+      .stage {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        aspect-ratio: 3 / 4;
+        max-height: 70vh;
+        overflow: hidden;
+      }
+      sv-presenter { display: block; width: 100%; height: 100%; }
+      .stage-msg {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 24px;
+        color: var(--muted);
+      }
+
+      .say-row { display: flex; gap: 8px; }
+      .say-row input {
+        flex: 1;
+        min-width: 0;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      /* Controls panel */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+      }
+      .group { display: flex; flex-direction: column; gap: 8px; }
+      .group > h3 {
+        margin: 0;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+      select {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 8px 10px;
+        font: inherit;
+      }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      button {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 7px 11px;
+        font: inherit;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      button:hover:not(:disabled) { background: #2b3140; border-color: #3a4150; }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+      button.toggle[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+      .intensity { display: flex; gap: 6px; }
+      .intensity button { flex: 1; }
+      .intensity button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+      .status {
+        font-size: 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+      }
+      .status b { color: var(--text); }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+      .dot.ok { background: var(--ok); }
+      .dot.warn { background: var(--warn); }
+      .dot.err { background: var(--err); }
+
+      .log {
+        font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: #0b0d11;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px;
+        height: 140px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        color: var(--muted);
+      }
+      .log .t-cmd { color: var(--accent); }
+      .log .t-ok { color: var(--ok); }
+      .log .t-err { color: var(--err); }
+      .log .t-evt { color: var(--warn); }
+      .hint { font-size: 11px; color: var(--muted); }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="stage-col">
+        <div class="stage" id="stage">
+          <!-- No "hidden" attribute here: some presenter builds need real
+               layout dimensions (not display:none) to set up their 3D canvas
+               during init, or PRESENTER_STATUS never fires. -->
+          <sv-presenter></sv-presenter>
+          <div class="stage-msg" id="stage-msg">
+            Pick an avatar, scene and voice, then press <b>Launch</b>.
+          </div>
+        </div>
+        <form class="say-row" id="say-form">
+          <input
+            id="say-input"
+            type="text"
+            placeholder="Type a line for the avatar to speak…"
+            value="Hello! I can show you everything I can do."
+            autocomplete="off"
+          />
+          <button type="submit" class="primary" id="say-btn" disabled>Speak</button>
+        </form>
+        <div class="log" id="log"></div>
+      </div>
+
+      <div class="panel">
+        <div class="status" id="status">
+          <span class="dot" id="status-dot"></span><span id="status-text">Loading catalog…</span>
+        </div>
+
+        <div class="group">
+          <h3>Target</h3>
+          <label class="field">Avatar <select id="sel-avatar"></select></label>
+          <label class="field">Scene <select id="sel-scene"></select></label>
+          <label class="field">Voice <select id="sel-voice"></select></label>
+          <button class="primary" id="launch-btn" disabled>Launch presenter</button>
+          <div class="hint">Audio unlocks on this click (browser autoplay policy).</div>
+        </div>
+
+        <div class="group">
+          <h3>Emotion — sent as present(text, {emotion, intensity})</h3>
+          <div class="intensity" id="intensity">
+            <button data-int="low" type="button">low</button>
+            <button data-int="neutral" type="button" aria-pressed="true">neutral</button>
+            <button data-int="high" type="button">high</button>
+          </div>
+          <div class="chips" id="emotion-chips"></div>
+          <button id="emotion-sweep" disabled type="button">▶ Sweep all 13 emotions</button>
+        </div>
+
+        <div class="group">
+          <h3>Motion — playMotion(id)</h3>
+          <div class="chips" id="motion-chips"></div>
+          <button id="motion-sweep" disabled type="button">▶ Sweep all motions</button>
+        </div>
+
+        <div class="group">
+          <h3>States</h3>
+          <div class="chips">
+            <button class="toggle" id="t-thinking" data-state="thinking" aria-pressed="false" disabled type="button">Thinking</button>
+            <button class="toggle" id="t-listening" data-state="listening" aria-pressed="false" disabled type="button">Listening</button>
+            <button id="btn-interrupt" disabled type="button">Interrupt</button>
+          </div>
+          <div class="chips">
+            <button id="cam-full" disabled type="button">Camera: full body</button>
+            <button id="cam-half" disabled type="button">Camera: half body</button>
+          </div>
+        </div>
+
+        <div class="hint">
+          Motion IDs are per-skeleton. Changing the avatar reloads its own motion list.
+          Emotion posture only shows if the org's emotion-posture flag is on.
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      const EMOTIONS = [
+        "joy", "excitement", "admiration", "caring", "gratitude", "sadness",
+        "disappointment", "annoyance", "embarrassment", "curiosity", "surprise",
+        "realization", "confusion",
+      ];
+      // Sensible defaults for this org's catalog — fall back to first item if absent.
+      const DEFAULT_AVATAR = "01KVQ50VW08HWWZNWPKAX9DVBQ"; // cc085a01_female_xr_01
+      const DEFAULT_VOICE = "01M1XFDVV2AX8665QSZHSA23NJ"; // Female - warm and cheerful
+
+      const $ = (s) => document.querySelector(s);
+      const presenter = $("sv-presenter");
+      const logEl = $("#log");
+      const statusDot = $("#status-dot");
+      const statusText = $("#status-text");
+
+      let ready = false;
+      let intensity = "neutral";
+
+      function log(kind, msg) {
+        const time = new Date().toLocaleTimeString();
+        const span = document.createElement("span");
+        span.className = `t-${kind}`;
+        span.textContent = `${time}  ${msg}\n`;
+        logEl.append(span);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      function setStatus(state, text) {
+        statusDot.className = `dot ${state}`;
+        statusText.textContent = text;
+      }
+
+      async function api(path) {
+        const res = await fetch(path);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || data.details || res.statusText);
+        return data;
+      }
+
+      function fillSelect(sel, items, valueKey, preferred) {
+        sel.innerHTML = "";
+        for (const it of items) {
+          const opt = document.createElement("option");
+          opt.value = it[valueKey];
+          opt.textContent = it.name || it[valueKey];
+          sel.append(opt);
+        }
+        if (preferred && items.some((it) => it[valueKey] === preferred)) {
+          sel.value = preferred;
+        }
+      }
+
+      // ── Load catalog + presenter engine ────────────────────────────────────
+      // The engine must be loaded (which upgrades <sv-presenter> and gives it its
+      // methods) BEFORE the Launch click — resumeAudioPlayback() needs the live
+      // element, and it must run synchronously enough after the click to still
+      // count as a user gesture, so it cannot wait on a script load.
+      let config;
+      let launchReady = false;
+      try {
+        config = await api("/api/config");
+        if (config.mock) throw new Error("Server is in mock mode — no live presenter.");
+        const [avatars, scenes, voices] = await Promise.all([
+          api("/api/avatars"),
+          api("/api/scenes"),
+          api("/api/voices"),
+        ]);
+        fillSelect($("#sel-avatar"), avatars.items, "id", DEFAULT_AVATAR);
+        fillSelect($("#sel-scene"), scenes.items, "id");
+        fillSelect($("#sel-voice"), voices.items, "id", DEFAULT_VOICE);
+        await loadMotions($("#sel-avatar").value);
+
+        setStatus("warn", "Loading presenter engine…");
+        await new Promise((res, rej) => {
+          const s = Object.assign(document.createElement("script"), {
+            type: "module",
+            src: config.presenterUrl,
+            onload: res,
+            onerror: () => rej(new Error("presenter engine failed to load")),
+          });
+          document.head.append(s);
+        });
+        // Wait for the custom element to be defined and upgraded (with a cap in
+        // case the engine registers under a name this build doesn't expect).
+        await Promise.race([
+          customElements.whenDefined?.("sv-presenter") ?? Promise.resolve(),
+          new Promise((r) => setTimeout(r, 3000)),
+        ]);
+        launchReady = true;
+        $("#launch-btn").disabled = false;
+        setStatus("warn", "Engine ready — press Launch.");
+        log("ok", "presenter engine loaded");
+      } catch (err) {
+        setStatus("err", err.message);
+        log("err", err.message);
+        $("#launch-btn").disabled = true;
+      }
+
+      // ── Emotion chips ───────────────────────────────────────────────────────
+      const emoWrap = $("#emotion-chips");
+      for (const e of EMOTIONS) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = e;
+        b.disabled = true;
+        b.dataset.emotion = e;
+        b.addEventListener("click", () => speak(sayText(), { emotion: e, intensity }));
+        emoWrap.append(b);
+      }
+
+      $("#intensity").addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-int]");
+        if (!btn) return;
+        intensity = btn.dataset.int;
+        for (const b of $("#intensity").children)
+          b.setAttribute("aria-pressed", String(b === btn));
+      });
+
+      // ── Motion chips (per avatar) ───────────────────────────────────────────
+      async function loadMotions(avatarId) {
+        const wrap = $("#motion-chips");
+        wrap.innerHTML = "<span class='hint'>loading…</span>";
+        try {
+          const { items } = await api(`/api/avatars/${avatarId}/motions`);
+          wrap.innerHTML = "";
+          for (const m of items) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.textContent = m.name;
+            b.disabled = !ready;
+            b.dataset.motion = m.motion_id;
+            b.addEventListener("click", () => doMotion(m.motion_id, m.name));
+            wrap.append(b);
+          }
+          log("ok", `${items.length} motions loaded for this avatar`);
+        } catch (err) {
+          wrap.innerHTML = `<span class='hint'>${err.message}</span>`;
+        }
+      }
+      $("#sel-avatar").addEventListener("change", (e) => loadMotions(e.target.value));
+
+      // ── Launch ─────────────────────────────────────────────────────────────
+      $("#launch-btn").addEventListener("click", async () => {
+        if (!launchReady) return;
+        $("#launch-btn").disabled = true;
+        try {
+          setStatus("warn", "Unlocking audio…");
+          await presenter.resumeAudioPlayback();
+          log("cmd", "resumeAudioPlayback()");
+
+          const { connect_key } = await api("/api/connect-key");
+          const target = {
+            avatarId: $("#sel-avatar").value,
+            sceneId: $("#sel-scene").value,
+            voiceId: $("#sel-voice").value,
+          };
+          log("cmd", `initializeWithConnectKey(${JSON.stringify(target)})`);
+          setStatus("warn", "Initializing presenter…");
+          await presenter.initializeWithConnectKey(connect_key, target);
+        } catch (err) {
+          setStatus("err", err.message);
+          log("err", err.message);
+          $("#launch-btn").disabled = false;
+        }
+      });
+
+      // ── Presenter events ───────────────────────────────────────────────────
+      presenter.addEventListener("PRESENTER_STATUS", (e) => {
+        const s = e.detail?.status;
+        log("evt", `PRESENTER_STATUS: ${s}`);
+        if (s === "Ready") {
+          ready = true;
+          presenter.hidden = false;
+          $("#stage-msg").hidden = true;
+          setStatus("ok", "Ready");
+          for (const b of document.querySelectorAll("button[disabled]")) {
+            if (b.id !== "launch-btn") b.disabled = false;
+          }
+          $("#launch-btn").textContent = "Re-launch";
+          $("#launch-btn").disabled = false;
+        }
+      });
+      presenter.addEventListener("CONNECT_KEY_REJECTED", () => {
+        setStatus("err", "Connect key rejected — reissue it and re-launch.");
+        log("err", "CONNECT_KEY_REJECTED");
+      });
+      for (const ev of ["PERFORMANCE_START", "PERFORMANCE_END", "ALL_PERFORMANCE_FINISHED"]) {
+        presenter.addEventListener(ev, () => log("evt", ev));
+      }
+
+      // ── Actions ────────────────────────────────────────────────────────────
+      const sayText = () => $("#say-input").value.trim() || "…";
+
+      async function speak(text, opts = {}) {
+        if (!ready) return;
+        const tag = opts.emotion
+          ? ` {emotion:${opts.emotion}, intensity:${opts.intensity}}`
+          : "";
+        log("cmd", `present("${text.slice(0, 40)}${text.length > 40 ? "…" : ""}")${tag}`);
+        const r = await presenter.present(text, opts);
+        if (!r?.success) log("err", `present failed: ${r?.code} ${r?.message ?? ""}`);
+      }
+      async function doMotion(id, name) {
+        if (!ready) return;
+        log("cmd", `playMotion("${name}")`);
+        const r = await presenter.playMotion(id);
+        if (!r?.success) log("err", `playMotion failed: ${r?.code} ${r?.message ?? ""}`);
+      }
+
+      $("#say-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        speak(sayText());
+      });
+
+      $("#btn-interrupt").addEventListener("click", () => {
+        presenter.interruptPresentation();
+        log("cmd", "interruptPresentation()");
+      });
+
+      for (const id of ["#t-thinking", "#t-listening"]) {
+        $(id).addEventListener("click", (e) => {
+          const btn = e.currentTarget;
+          const on = btn.getAttribute("aria-pressed") !== "true";
+          btn.setAttribute("aria-pressed", String(on));
+          const fn = btn.dataset.state === "thinking" ? "setThinking" : "setListening";
+          presenter[fn](on);
+          log("cmd", `${fn}(${on})`);
+        });
+      }
+
+      $("#cam-full").addEventListener("click", () => {
+        presenter.updateCameraAngle("fullbody");
+        log("cmd", 'updateCameraAngle("fullbody")');
+      });
+      $("#cam-half").addEventListener("click", () => {
+        presenter.updateCameraAngle("halfbody");
+        log("cmd", 'updateCameraAngle("halfbody")');
+      });
+
+      // ── Sweeps ─────────────────────────────────────────────────────────────
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      $("#emotion-sweep").addEventListener("click", async () => {
+        for (const e of EMOTIONS) {
+          if (!ready) break;
+          await speak(`This feeling is ${e}.`, { emotion: e, intensity });
+          await wait(3600);
+        }
+      });
+
+      $("#motion-sweep").addEventListener("click", async () => {
+        for (const b of $("#motion-chips").querySelectorAll("button[data-motion]")) {
+          if (!ready) break;
+          await doMotion(b.dataset.motion, b.textContent);
+          await wait(4800);
+        }
+      });
+    </script>
+  </body>
+</html>

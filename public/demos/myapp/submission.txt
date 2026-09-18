@@ -1,0 +1,73 @@
+What did you build?
+
+An AI Japanese-teaching avatar (先生 / "Sensei") built on the Perxona Connect Kit. A 3D avatar leads short, structured lessons across nine topics -- greetings, numbers, family, food, time & days, shopping, directions, and self-introduction -- plus a dedicated vocabulary flashcard deck, then tests what was covered in a 14-question multiple-choice quiz. Every lesson card, quiz question, and answer option is a single tap; no typing is required for the whole core flow. A free-text box stays open for anyone who wants to ask something outside the script.
+
+Who is it for?
+
+English-speaking absolute beginners in Japanese -- someone with no IME for typing kana, no muscle memory for a Japanese keyboard layout, and five spare minutes rather than a course to enroll in. The learner who wants a patient teacher on a phone or laptop screen, not an app that assumes they can already type what they're trying to learn.
+
+What problem does it solve?
+
+1) Typing is the wrong interface for a script you don't know yet. Most lesson apps ask the student to type an answer or a question in the language they're still learning to write. This app answers everything -- topic, quiz choice, quick reply -- with a tap.
+
+2) A text-only chatbot tutor has no presence. It can explain a word, but it can't celebrate a correct answer or soften a wrong one the way a person would. This avatar reacts in character every turn: a clap and a brighter tone for a right answer, a gentle head-shake and a calmer tone for a wrong one.
+
+3) Multi-lingual text-to-speech mispronounces exactly the content a language app depends on. A bare kanji character read with Chinese pronunciation instead of Japanese, an English sentence dragged into a Japanese accent because it shared one utterance with a Japanese word, and even a literal escaped quote mark read aloud as the word "backslash." Each of these surfaced during development, and each has a specific, tested fix built into the code: speak the hiragana reading, never the bare kanji; never mix two languages in one spoken line; never send a straight quote character to the voice engine.
+
+What makes it different? Be specific.
+
+- Every teaching card pairs a Japanese word with an emoji picture on purpose, not a downloaded stock photo -- instant, unambiguous, zero network calls, zero licensing to check, and nothing that can fail to load live on stage.
+
+- The quiz gives graded emotional feedback, not just a checkmark: a thumbs-up gesture and joy at high intensity for a correct answer; a gentle "no" gesture and a caring tone for a wrong one, followed by the correct answer -- never disappointment aimed at the student. The reaction is chosen per outcome, not scripted once for the whole quiz.
+
+- Lesson content, vocabulary, and quiz questions are a fixed, hand-built deck, not model-generated per session -- so every run of the demo behaves identically, and nothing depends on a language model remembering a formatting instruction mid-quiz.
+
+- Three real text-to-speech failure modes were found and fixed at the source during development (kanji misread as Chinese, English read with a Japanese accent, escaped quote marks read aloud) -- concrete engineering, not a demo that happens to work once.
+
+- Built directly on the Connect Kit's own Embed template with zero framework -- a fork of the official starter, not a rewrite, so anything Perxona ships next for the kit lands in this project for free.
+
+
+How did you use the Perxona Connect Kit?
+
+We forked the official Express sample as our backend and built the shipped app on top of the Embed template, not Studio. Studio was used only as a development tool -- browsing the avatar/scene/voice catalog, creating and editing the chatbot, and testing motion IDs before hardcoding them -- but nothing from Studio itself was shipped. The product is a copy of Embed with a new layout and new client-side logic on top of the same backend proxy and the same <sv-presenter> integration pattern.
+
+Which parts did you use?
+
+- The <sv-presenter> Web Component: initializeWithConnectKey(), present() (with the emotion/intensity options), playMotion(), resumeAudioPlayback(), setThinking(), and the PRESENTER_STATUS, PLAYING_SPEECH_TEXT, and ALL_PERFORMANCE_FINISHED events.
+- Motion Markup ("[MOTION <id>:<priority>]") embedded in spoken text to trigger specific gestures.
+- The Connect API catalog routes through the sample's proxy: GET /api/avatars, GET /api/avatars/:id/motions, GET /api/scenes, GET /api/voices.
+- The Connect chatbot API: creating a chatbot with custom_instructions in Studio, then POST /api/chatbots/:id/chat for the free-text fallback conversation.
+- The DEMO_FIXED_AVATAR_ID / DEMO_FIXED_SCENE_ID / DEMO_FIXED_VOICE_ID / DEMO_FIXED_CHATBOT_ID environment variables, so the shipped app opens with no picker and no configuration step for the visitor.
+
+What did you have to work around?
+
+- A chatbot cannot be trusted to reliably emit a structured format (our own "[CHOICES: option | option]" convention for quiz answers) on every single turn. We worked around this by moving all lesson content, vocabulary, and quiz questions into a fixed local deck driven entirely by our own code, and using the chatbot only for open-ended free-text questions where perfect reliability isn't required.
+- The multi-lingual voice picks one language for an entire utterance. Mixing Japanese and English in a single present() call got the English words read with a Japanese accent. We worked around this by never mixing languages in one call -- always two separate present() calls, one per language.
+- A single kanji character with no surrounding Japanese context (e.g. "山") is ambiguous CJK script, and the voice sometimes read it with Chinese pronunciation. We worked around this by always speaking the hiragana reading and never the bare kanji, while still showing the kanji on screen for reading practice.
+- A literal straight-quote character (") in text sent to present() came back escaped as \" and was both displayed and read aloud, audibly as "backslash." We worked around this by never sending a straight quote character to present() at all.
+- Motion IDs are per-account and per-avatar-skeleton with no discovery UI in the kit itself. We queried GET /api/avatars/:id/motions ourselves, read through the returned names, and hand-built a semantic tag map (e.g. "[wave]", "[thumbsup]", "[no]") so our own instructions/code never had to reference a raw ID directly.
+
+What's missing that you wanted?
+
+- A documented, reliable way for a chatbot turn to return structured data (a set of answer choices, a correct/incorrect flag) rather than only a spoken sentence, so we wouldn't have had to invent and then abandon our own bracket syntax for it.
+- Motion catalog metadata describing what each motion is suited for (celebratory vs. calming vs. neutral), instead of having to infer it from the motion's name alone.
+- A way to check via the API whether an organization's emotion-posture flag is enabled, instead of needing to ask on Discord.
+- A "literal" mode for present() that skips language auto-detection entirely for very short text, so a single kanji character wouldn't need the hiragana workaround in the first place.
+- A supported way to attach a small custom image or icon to a vocabulary item or avatar without standing up a separate asset pipeline -- we used emoji specifically because there was no lighter-weight option.
+
+
+What broke, and how did you fix it?
+
+- Embedding "[MOTION <id>:1]" directly inside a very short spoken word garbled the audio and, on closer inspection, made the avatar read stray characters aloud. We separated gesture from speech entirely: playMotion() fires the gesture independently, and present() only ever receives plain Japanese or English text, no markup mixed in.
+
+- A word's explanation was sometimes read with an audible "backslash" in the middle of the sentence. Tracing it back, a literal straight double-quote (") in our own text was coming back escaped as \" somewhere in the Connect pipeline, and that escaped form was both displayed and spoken. The fix was to stop sending straight quotes to present() at all -- we rewrote every spoken sentence to avoid quoting words.
+
+- The word "山" (mountain) came out read with Chinese pronunciation instead of Japanese. A single kanji character with no surrounding Japanese context is ambiguous CJK script, and the multi-lingual voice guessed wrong. We fixed it by always speaking the hiragana reading (やま) instead of the bare kanji, while still showing the kanji on the card for reading practice.
+
+- Right after that fix, the English meaning sentence started coming out read with a Japanese accent. We had combined the hiragana reading, the romaji, and the English meaning into one present() call, and a multi-lingual voice picks a single language for the whole utterance. We split it into two separate present() calls -- one pure Japanese, one pure English -- and each was read correctly.
+
+- Our custom test/demo page (a "Playground" screen for trying every emotion and motion by hand) threw "presenter.resumeAudioPlayback is not a function" on launch. The <sv-presenter> engine script hadn't finished loading yet, so the custom element wasn't upgraded and had no methods. We fixed it by loading the engine script as soon as the page opened instead of waiting for the Launch button click, so by the time a user gesture called resumeAudioPlayback(), the element was already real.
+
+- The practice quiz's answer buttons sometimes just didn't appear. The chatbot was supposed to end every quiz question with our own "[CHOICES: option | option]" line, but an LLM doesn't follow a formatting instruction with 100% consistency across every turn -- some questions came back with no choices at all. Rather than keep tightening the prompt and hoping, we removed the chatbot from the quiz entirely and replaced it with a fixed local question deck, so the choices are guaranteed to render every time.
+
+- After rotating to a different Perxona account/API key partway through the build, the app kept saying no chatbot was configured even after creating a new one. DEMO_FIXED_CHATBOT_ID in .env was still pinned to the old account's chatbot ID, and a pinned ID is used as-is with no validation against the current account. Clearing that value let the app auto-select the newly created chatbot instead.
